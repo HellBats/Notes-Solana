@@ -1,0 +1,17 @@
+cargo-features = ["edition2024"]
+
+[package]
+name = "contract"
+version = "0.1.0"
+edition = "2024"
+
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+
+[dependencies]
+base64ct = "=1.7.3"
+borsh = "1.5.7"
+solana-program = "3.0.0"
+solana-system-interface = {version= "2.0.0" , features=["bincode"]}
