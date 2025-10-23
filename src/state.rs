@@ -1,8 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 
-
-
 #[derive(BorshDeserialize,BorshSerialize,Default)]
 pub struct NoteState
 {

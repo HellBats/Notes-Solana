@@ -3,7 +3,7 @@ use solana_program::{account_info::AccountInfo, entrypoint::{entrypoint, Program
 mod processor;
 mod instructions;
 mod state;
-
+mod errors;
 entrypoint!(process_instruction);
 fn process_instruction(
     program_id: &Pubkey,
