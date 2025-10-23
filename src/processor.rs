@@ -1,10 +1,18 @@
-use solana_program::{account_info::{next_account_info, AccountInfo}, entrypoint::ProgramResult, msg, program::invoke_signed, program_error::ProgramError, pubkey::Pubkey, rent::Rent, sysvar::Sysvar};
-
+use solana_program::{account_info::{next_account_info,AccountInfo},
+    entrypoint::ProgramResult,
+    msg, program::invoke_signed,
+    program_error::ProgramError,
+    pubkey::Pubkey, rent::Rent, sysvar::Sysvar
+};
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use solana_system_interface::instruction::{create_account,transfer};
+use solana_system_interface::program;
+use solana_system_interface::instruction::{create_account};
 use crate::{errors::NoteErrors, instructions::NoteInstructions};
 use crate::state::NoteState;
+
+const MAX_TITLE_LEN: usize = 50;  // Max 50 chars for title
+const MAX_BODY_LEN: usize = 200; // Max 200 chars for body
 
 pub fn processor(program_id: &Pubkey,
     accounts:&[AccountInfo],
@@ -21,7 +29,7 @@ pub fn processor(program_id: &Pubkey,
             let system_program = next_account_info(accounts_iter)?;
 
 
-            let account_len = 1 + 4 + 4 + title.len() + body.len()+8;
+            let account_len = 1 + 4 + 4 + MAX_TITLE_LEN + MAX_BODY_LEN+8;
             let rent = Rent::get()?;
             let ren_lamports = rent.minimum_balance(account_len);
             
@@ -93,37 +101,38 @@ pub fn processor(program_id: &Pubkey,
             msg!("Data succesfully Updated");
             return Ok(())
         }
-        NoteInstructions::DeleteNode {id} =>
-        {
+        NoteInstructions::DeleteNode { id } => {
             let accounts_iter = &mut accounts.iter();
             let note_deleter = next_account_info(accounts_iter)?;
             let pda_account = next_account_info(accounts_iter)?;
             let system_program = next_account_info(accounts_iter)?;
 
-            if pda_account.owner != program_id
-            {
-                return Err(NoteErrors::InvalidNoteAccount.into());
-            }           
-            if !note_deleter.is_signer
-            {
+            if !note_deleter.is_signer {
                 msg!("Missing required signature");
                 return Err(ProgramError::MissingRequiredSignature);
             }
-            let (note_pda_account,bump_seed) = Pubkey::find_program_address(
-                &[note_deleter.key.as_ref(),&id.to_ne_bytes()], program_id);
-            
-            if *pda_account.key != note_pda_account
-            {
-                msg!("Invalid seeds for PDA");
+
+            if pda_account.owner != program_id {
+                msg!("This is not a note account owned by program");
+                return Err(NoteErrors::InvalidNoteAccount.into());
+            }
+
+            // Check PDA derivation
+            let (expected_pda, bump) = Pubkey::find_program_address(
+                &[note_deleter.key.as_ref(), &id.to_le_bytes()],
+                program_id
+            );
+            if expected_pda != *pda_account.key {
+                msg!("PDA derivation mismatch");
                 return Err(ProgramError::InvalidArgument);
             }
-            invoke_signed(&transfer(
-                &note_pda_account, 
-                &note_deleter.key,
-                 pda_account.lamports()),
-                 &[note_deleter.clone(), pda_account.clone(), system_program.clone()],
-             &[&[note_deleter.key.as_ref(), id.to_ne_bytes().as_ref(), &[bump_seed]]])?;
-            return Ok(())
+
+            // ✅ Drain lamports to user
+            **note_deleter.try_borrow_mut_lamports()? += pda_account.lamports();
+            **pda_account.try_borrow_mut_lamports()? = 0;
+
+            msg!("✅ Note deleted and lamports returned");
+            Ok(())
         }
     }
 }
